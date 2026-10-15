@@ -148,3 +148,4 @@ docker compose up -d
 ```
 Spins up MySQL 8.0, applies schema migrations, seeds the calendar, runs the 4:00 PM IST scheduler daemon, and launches the FastAPI service and Dashboard on port 8000.
 
+# g-stock
