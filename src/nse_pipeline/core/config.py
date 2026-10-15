@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     sqlite_db_path: str = Field(default="./data/nse_market_data.db", alias="SQLITE_DB_PATH")
     use_sqlite_fallback: bool = Field(default=True, alias="USE_SQLITE_FALLBACK")
 
+    # MongoDB Configuration (Compass & Analytics Storage)
+    mongodb_uri: str = Field(default="mongodb://localhost:27017", alias="MONGODB_URI")
+    mongodb_database: str = Field(default="nse_market_data", alias="MONGODB_DATABASE")
+    enable_mongodb: bool = Field(default=True, alias="ENABLE_MONGODB")
+
     # Date Limits
     data_start_date: str = Field(default="2001-01-01", alias="DATA_START_DATE")
     data_end_date: str = Field(default="2026-10-08", alias="DATA_END_DATE")

@@ -30,7 +30,12 @@ class MongoSyncService:
 
     def __init__(self, session: Session | None = None):
         self._provided_session = session
-        init_mongo_indexes()
+        try:
+            settings = get_settings()
+            if settings.enable_mongodb:
+                init_mongo_indexes()
+        except Exception as e:
+            logger.warning(f"Could not initialize MongoDB indexes: {e}")
 
     def sync_securities(self, on_progress: Callable[[int, int], None] | None = None) -> int:
         """Syncs all securities metadata into the MongoDB 'securities' collection."""
@@ -185,3 +190,160 @@ class MongoSyncService:
 
         logger.info(f"Finished syncing {processed:,} stock price records to MongoDB collection 'stock_daily_history'.")
         return processed
+
+    def sync_from_mongo_to_sql(
+        self,
+        batch_size: int = 5000,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> dict[str, int]:
+        """Pulls all securities, trading calendar, and daily stock price records from MongoDB into SQL."""
+        settings = get_settings()
+        if not settings.enable_mongodb:
+            logger.info("MongoDB is disabled in settings. Skipping pull from MongoDB.")
+            return {"securities": 0, "calendar": 0, "prices": 0}
+
+        try:
+            db = get_mongo_db()
+        except Exception as e:
+            logger.warning(f"Could not connect to MongoDB for pull: {e}")
+            return {"securities": 0, "calendar": 0, "prices": 0}
+
+        with (self._provided_session if self._provided_session else get_db_session()) as session:
+            # 1. Pull Securities
+            sec_docs = list(db.securities.find({}))
+            sec_count = len(sec_docs)
+            logger.info(f"Pulling {sec_count:,} securities from MongoDB to SQL...")
+            if sec_docs:
+                from nse_pipeline.database.bulk_upsert import bulk_upsert_securities
+                clean_secs = []
+                for d in sec_docs:
+                    clean_secs.append({
+                        "id": int(d.get("id")) if d.get("id") else None,
+                        "symbol": d.get("symbol"),
+                        "series": d.get("series", "EQ"),
+                        "company_name": d.get("company_name"),
+                        "isin": d.get("isin"),
+                        "status": d.get("status", "ACTIVE"),
+                        "first_traded_date": d.get("first_traded_date"),
+                        "last_traded_date": d.get("last_traded_date"),
+                    })
+                bulk_upsert_securities(session, clean_secs)
+                session.commit()
+
+            # Build securities lookup map (symbol, series) -> id
+            rows = session.execute(text("SELECT id, symbol, series FROM securities")).all()
+            sec_map = {(r[1], r[2]): r[0] for r in rows}
+
+            # 2. Pull Trading Calendar
+            cal_docs = list(db.trading_calendar.find({}))
+            cal_count = len(cal_docs)
+            logger.info(f"Pulling {cal_count:,} calendar dates from MongoDB to SQL...")
+            if cal_docs:
+                cal_data = []
+                for d in cal_docs:
+                    cal_data.append({
+                        "trade_date": d.get("trade_date"),
+                        "session_type": d.get("session_type", "EQUITY"),
+                        "is_trading_day": bool(int(d.get("is_trading_day", 1))),
+                        "is_holiday": bool(int(d.get("is_holiday", 0))),
+                        "holiday_name": d.get("holiday_name"),
+                        "is_weekend": bool(int(d.get("is_weekend", 0))),
+                    })
+                dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+                upsert_cal_sql = text("""
+                    INSERT INTO trading_calendar (trade_date, session_type, is_trading_day, is_holiday, holiday_name, is_weekend)
+                    VALUES (:trade_date, :session_type, :is_trading_day, :is_holiday, :holiday_name, :is_weekend)
+                    ON CONFLICT(trade_date) DO UPDATE SET
+                        session_type=excluded.session_type,
+                        is_trading_day=excluded.is_trading_day,
+                        is_holiday=excluded.is_holiday,
+                        holiday_name=excluded.holiday_name,
+                        is_weekend=excluded.is_weekend
+                """) if "sqlite" in dialect_name else text("""
+                    INSERT INTO trading_calendar (trade_date, session_type, is_trading_day, is_holiday, holiday_name, is_weekend)
+                    VALUES (:trade_date, :session_type, :is_trading_day, :is_holiday, :holiday_name, :is_weekend)
+                    ON DUPLICATE KEY UPDATE
+                        session_type=VALUES(session_type),
+                        is_trading_day=VALUES(is_trading_day),
+                        is_holiday=VALUES(is_holiday),
+                        holiday_name=VALUES(holiday_name),
+                        is_weekend=VALUES(is_weekend)
+                """)
+                for c_item in cal_data:
+                    session.execute(upsert_cal_sql, c_item)
+                session.commit()
+
+            # 3. Pull Stock Daily History
+            total_history = db.stock_daily_history.count_documents({})
+            logger.info(f"Pulling {total_history:,} daily price records from MongoDB to SQL...")
+            cursor = db.stock_daily_history.find({}, batch_size=batch_size)
+            hist_chunk = []
+            processed = 0
+
+            for d in cursor:
+                sym = d.get("symbol")
+                ser = d.get("series", "EQ")
+                sec_id = sec_map.get((sym, ser)) or sec_map.get((sym, "EQ")) or 1
+
+                hist_chunk.append({
+                    "trade_date": d.get("trade_date"),
+                    "security_id": sec_id,
+                    "symbol": sym,
+                    "series": ser,
+                    "prev_close": d.get("prev_close"),
+                    "open_price": d.get("open_price"),
+                    "high_price": d.get("high_price"),
+                    "low_price": d.get("low_price"),
+                    "last_price": d.get("last_price"),
+                    "close_price": d.get("close_price"),
+                    "vwap": d.get("vwap"),
+                    "traded_quantity": d.get("traded_quantity"),
+                    "turnover": d.get("turnover"),
+                    "no_of_trades": d.get("no_of_trades"),
+                    "deliverable_quantity": d.get("deliverable_quantity"),
+                    "deliverable_pct": d.get("deliverable_pct"),
+                    "source_format": "MONGODB_SYNC",
+                    "source_file": "mongo://nse_market_data/stock_daily_history",
+                })
+
+                if len(hist_chunk) >= batch_size:
+                    from nse_pipeline.database.bulk_upsert import bulk_upsert_stock_history
+                    bulk_upsert_stock_history(session, hist_chunk, batch_size=batch_size)
+                    session.commit()
+                    processed += len(hist_chunk)
+                    msg = f"Imported {processed:,}/{total_history:,} ({processed/total_history*100:.1f}%) stock prices into SQL"
+                    logger.info(msg)
+                    if on_progress:
+                        on_progress(processed, total_history, msg)
+                    hist_chunk = []
+
+            if hist_chunk:
+                from nse_pipeline.database.bulk_upsert import bulk_upsert_stock_history
+                bulk_upsert_stock_history(session, hist_chunk, batch_size=batch_size)
+                session.commit()
+                processed += len(hist_chunk)
+
+            logger.info(f"Successfully synced {processed:,} stock price records from MongoDB into SQL.")
+            return {"securities": sec_count, "calendar": cal_count, "prices": processed}
+
+    def ensure_sql_hydrated_from_mongo(self) -> bool:
+        """Checks if SQL database has 0 price records but MongoDB has data, and auto-hydrates."""
+        settings = get_settings()
+        if not settings.enable_mongodb:
+            return False
+
+        try:
+            with (self._provided_session if self._provided_session else get_db_session()) as session:
+                sql_count = session.execute(text("SELECT COUNT(*) FROM stock_daily_history")).scalar() or 0
+                if sql_count > 0:
+                    return False  # Already populated
+
+            db = get_mongo_db()
+            mongo_count = db.stock_daily_history.count_documents({})
+            if mongo_count > 0:
+                logger.info(f"SQL database has 0 price records, but MongoDB has {mongo_count:,}. Auto-hydrating SQL from MongoDB...")
+                self.sync_from_mongo_to_sql()
+                return True
+        except Exception as e:
+            logger.warning(f"Could not check or hydrate SQL from MongoDB: {e}")
+        return False

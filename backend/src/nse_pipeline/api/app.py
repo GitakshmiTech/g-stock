@@ -14,6 +14,7 @@ from nse_pipeline.api.routes import (
     securities,
     stocks,
     users,
+    mongo,
 )
 
 app = FastAPI(
@@ -41,11 +42,15 @@ app.include_router(analytics.router)
 app.include_router(prices.router)
 app.include_router(securities.router)
 app.include_router(ingestion.router)
+app.include_router(mongo.router)
 
 
 @app.on_event("startup")
 def startup_event():
     """Initializes tables, seeds default admin credentials, and starts daily scheduler."""
+    import logging
+    app_logger = logging.getLogger("nse_pipeline.api.app")
+
     from nse_pipeline.database.session import init_db, get_db_session
     from nse_pipeline.database.repositories.user_repository import UserRepository
 
@@ -55,8 +60,15 @@ def startup_event():
             repo = UserRepository(session)
             repo.seed_default_admin()
     except Exception as e:
-        import logging
-        logging.getLogger("nse_pipeline.api.app").error(f"Error during database initialization/seeding: {e}")
+        app_logger.error(f"Error during database initialization/seeding: {e}")
+
+    # Auto-hydrate SQL database from MongoDB if SQL is empty and MongoDB has data
+    try:
+        from nse_pipeline.services.mongo_sync_service import MongoSyncService
+        sync_svc = MongoSyncService()
+        sync_svc.ensure_sql_hydrated_from_mongo()
+    except Exception as e:
+        app_logger.warning(f"MongoDB auto-hydration check skipped: {e}")
 
     from nse_pipeline.scheduler.daily_scheduler import init_background_scheduler
     init_background_scheduler()

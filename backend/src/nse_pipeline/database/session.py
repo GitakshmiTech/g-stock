@@ -50,6 +50,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db(engine=None) -> None:
     """Initializes tables using metadata reflection/creation."""
+    import nse_pipeline.database.models  # noqa: F401 - register models on Base
     eng = engine or get_engine()
     logger.info(f"Initializing database schema on {eng.url}...")
     Base.metadata.create_all(bind=eng)

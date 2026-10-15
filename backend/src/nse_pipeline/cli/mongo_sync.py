@@ -98,6 +98,37 @@ def sync_cmd(
         launch_compass_app()
 
 
+@app.command(name="pull")
+def pull_cmd(
+    batch_size: int = typer.Option(5000, "--batch-size", "-b", help="Batch size for bulk insertion into SQL"),
+):
+    """Pulls all securities, calendar dates, and stock price history from MongoDB into SQL (SQLite/MySQL)."""
+    console.print("[bold green]Pulling Market Data from MongoDB into SQL...[/bold green]")
+    service = MongoSyncService()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("[cyan]Importing from MongoDB...", total=100)
+
+        def progress_callback(processed: int, total: int, msg: str):
+            if total > 0:
+                pct = (processed / total) * 100
+                progress.update(task_id, completed=pct, description=f"[cyan]{msg}")
+
+        results = service.sync_from_mongo_to_sql(batch_size=batch_size, on_progress=progress_callback)
+
+    console.print("\n[bold green]✓ Successfully hydrated SQL database from MongoDB:[/bold green]")
+    console.print(f"  • Securities: [bold cyan]{results.get('securities', 0):,}[/bold cyan]")
+    console.print(f"  • Calendar Dates: [bold cyan]{results.get('calendar', 0):,}[/bold cyan]")
+    console.print(f"  • Price Records: [bold cyan]{results.get('prices', 0):,}[/bold cyan]")
+
+
 @app.command(name="status")
 def status_cmd():
     """Display MongoDB connection status and collection document counts."""

@@ -43,6 +43,15 @@ def bulk_upsert_stock_history(
 
         total_processed += len(chunk)
 
+    # Automatic dual-write to MongoDB if enabled
+    try:
+        from nse_pipeline.core.config import get_settings
+        if get_settings().enable_mongodb:
+            from nse_pipeline.database.mongo import bulk_upsert_stock_history_mongo
+            bulk_upsert_stock_history_mongo(sanitized_records)
+    except Exception as e:
+        logger.warning(f"Failed to dual-write daily stock records to MongoDB: {e}")
+
     return total_processed
 
 

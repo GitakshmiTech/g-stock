@@ -12,6 +12,7 @@ backend/src/nse_pipeline/api/routes/dashboard.py
 backend/src/nse_pipeline/api/routes/health.py
 backend/src/nse_pipeline/api/routes/ingestion.py
 backend/src/nse_pipeline/api/routes/market_data.py
+backend/src/nse_pipeline/api/routes/mongo.py
 backend/src/nse_pipeline/api/routes/prices.py
 backend/src/nse_pipeline/api/routes/securities.py
 backend/src/nse_pipeline/api/routes/stocks.py
@@ -28,6 +29,7 @@ backend/src/nse_pipeline/cli/commands.py
 backend/src/nse_pipeline/cli/daily_update.py
 backend/src/nse_pipeline/cli/export_data.py
 backend/src/nse_pipeline/cli/import_file.py
+backend/src/nse_pipeline/cli/mongo_sync.py
 backend/src/nse_pipeline/cli/setup_database.py
 backend/src/nse_pipeline/cli/validate_data.py
 backend/src/nse_pipeline/clients/__init__.py
@@ -46,6 +48,7 @@ backend/src/nse_pipeline/database/__init__.py
 backend/src/nse_pipeline/database/bulk_upsert.py
 backend/src/nse_pipeline/database/connection.py
 backend/src/nse_pipeline/database/models.py
+backend/src/nse_pipeline/database/mongo.py
 backend/src/nse_pipeline/database/session.py
 backend/src/nse_pipeline/database/repositories/__init__.py
 backend/src/nse_pipeline/database/repositories/corporate_action_repository.py
@@ -102,6 +105,7 @@ backend/src/nse_pipeline/services/historical_import.py
 backend/src/nse_pipeline/services/incremental_update.py
 backend/src/nse_pipeline/services/ingestion_service.py
 backend/src/nse_pipeline/services/market_summary.py
+backend/src/nse_pipeline/services/mongo_sync_service.py
 backend/src/nse_pipeline/services/reconciliation_service.py
 backend/src/nse_pipeline/services/recovery_service.py
 backend/src/nse_pipeline/validation/__init__.py

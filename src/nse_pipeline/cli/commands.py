@@ -7,6 +7,7 @@ from nse_pipeline.cli import (
     daily_update,
     export_data,
     import_file,
+    mongo_sync,
     setup_database,
     validate_data,
 )
@@ -24,6 +25,7 @@ cli_app.add_typer(daily_update.app, name="daily-update")
 cli_app.add_typer(import_file.app, name="import-file")
 cli_app.add_typer(validate_data.app, name="validate-data")
 cli_app.add_typer(export_data.app, name="export-data")
+cli_app.add_typer(mongo_sync.app, name="mongo")
 
 
 @cli_app.command(name="start-scheduler")
