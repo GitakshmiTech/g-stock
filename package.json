@@ -1,0 +1,17 @@
+{
+  "name": "g-stock",
+  "version": "1.0.0",
+  "description": "NSE Market Data Pipeline & Financial Analytics Terminal",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "npm --prefix backend run dev",
+    "start": "npm --prefix backend run start",
+    "build": "npm --prefix frontend run build",
+    "backfill": "py scripts/run_historical_backfill_2001_to_present.py",
+    "backfill:status": "py scripts/run_historical_backfill_2001_to_present.py --status"
+  },
+  "keywords": ["nse", "stocks", "fastapi", "react", "vite"],
+  "author": "NSE Pipeline Team",
+  "license": "ISC"
+}

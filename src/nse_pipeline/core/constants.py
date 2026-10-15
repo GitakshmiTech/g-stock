@@ -63,7 +63,7 @@ UDIFF_TRANSITION_DATE = "2024-07-08"
 
 # NSE URL templates
 NSE_LEGACY_BHAVCOPY_URL_TEMPLATE = (
-    "https://archives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{day}{month}{year}bhav.csv.zip"
+    "https://nsearchives.nseindia.com/content/historical/EQUITIES/{year}/{month}/cm{day}{month}{year}bhav.csv.zip"
 )
 NSE_UDIFF_BHAVCOPY_URL_TEMPLATE = (
     "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date_compact}_F_0000.csv.zip"

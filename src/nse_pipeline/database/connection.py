@@ -58,12 +58,18 @@ def get_engine(force_new: bool = False) -> Engine:
     # SQLite fallback
     engine = create_engine(
         settings.sqlite_connection_url,
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 60},
         pool_pre_ping=True,
     )
     with engine.connect() as conn:
+        try:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.execute(text("PRAGMA busy_timeout=60000"))
+        except Exception:
+            pass
         conn.execute(text("SELECT 1"))
-    logger.info(f"Connected to SQLite at {settings.sqlite_db_path}")
+    logger.info(f"Connected to SQLite at {settings.sqlite_db_path} (WAL mode enabled)")
     _engine = engine
     return _engine
 

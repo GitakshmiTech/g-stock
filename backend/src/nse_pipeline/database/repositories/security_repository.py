@@ -121,13 +121,14 @@ class SecurityRepository:
         self.session.flush()
         return new_sec
 
+    _security_id_cache: dict[tuple[str, str], int] = {}
+
     def bulk_resolve_security_ids(
         self,
         items: list[dict[str, Any]],
         trade_date: date | None = None,
     ) -> dict[tuple[str, str], int]:
-        """Resolves security IDs in bulk, caching in memory and creating missing records in one pass."""
-        # Find unique pairs
+        """Resolves security IDs in bulk with in-memory caching to eliminate redundant DB queries."""
         unique_pairs = set()
         for item in items:
             sym = str(item.get("symbol", "")).strip().upper()
@@ -138,49 +139,51 @@ class SecurityRepository:
         if not unique_pairs:
             return {}
 
-        # Fetch all existing
         mapping: dict[tuple[str, str], int] = {}
-        symbols = list({p[0] for p in unique_pairs})
+        missing_pairs = set()
 
-        # Batch lookup by symbols
-        stmt = select(Security).where(Security.symbol.in_(symbols))
-        existing_secs = self.session.execute(stmt).scalars().all()
-
-        for sec in existing_secs:
-            mapping[(sec.symbol, sec.series)] = sec.id
-            if trade_date:
-                if sec.first_traded_date is None or trade_date < sec.first_traded_date:
-                    sec.first_traded_date = trade_date
-                if sec.last_traded_date is None or trade_date > sec.last_traded_date:
-                    sec.last_traded_date = trade_date
-
-        # Insert missing pairs
-        new_objects = []
         for sym, srs in unique_pairs:
-            if (sym, srs) not in mapping:
-                # Find ISIN and company_name from items if available
-                isin = None
-                company_name = None
-                for itm in items:
-                    if str(itm.get("symbol", "")).strip().upper() == sym and str(itm.get("series", "")).strip().upper() == srs:
-                        isin = itm.get("isin")
-                        company_name = itm.get("company_name")
-                        break
-                new_sec = Security(
-                    symbol=sym,
-                    series=srs,
-                    company_name=company_name,
-                    isin=isin.strip().upper() if isin else None,
-                    first_traded_date=trade_date,
-                    last_traded_date=trade_date,
-                )
-                self.session.add(new_sec)
-                new_objects.append(((sym, srs), new_sec))
+            pair = (sym, srs)
+            if pair in SecurityRepository._security_id_cache:
+                mapping[pair] = SecurityRepository._security_id_cache[pair]
+            else:
+                missing_pairs.add(pair)
 
-        if new_objects:
-            self.session.flush()
-            for key, obj in new_objects:
-                mapping[key] = obj.id
+        if missing_pairs:
+            missing_symbols = list({p[0] for p in missing_pairs})
+            stmt = select(Security.symbol, Security.series, Security.id).where(Security.symbol.in_(missing_symbols))
+            for sym, srs, s_id in self.session.execute(stmt).all():
+                SecurityRepository._security_id_cache[(sym, srs)] = s_id
+                if (sym, srs) in missing_pairs:
+                    mapping[(sym, srs)] = s_id
+
+            unresolved = [p for p in missing_pairs if p not in SecurityRepository._security_id_cache]
+            if unresolved:
+                new_objects = []
+                for sym, srs in unresolved:
+                    isin = None
+                    company_name = None
+                    for itm in items:
+                        if str(itm.get("symbol", "")).strip().upper() == sym and str(itm.get("series", "")).strip().upper() == srs:
+                            isin = itm.get("isin")
+                            company_name = itm.get("company_name")
+                            break
+                    new_sec = Security(
+                        symbol=sym,
+                        series=srs,
+                        company_name=company_name,
+                        isin=isin.strip().upper() if isin else None,
+                        first_traded_date=trade_date,
+                        last_traded_date=trade_date,
+                    )
+                    self.session.add(new_sec)
+                    new_objects.append(((sym, srs), new_sec))
+
+                if new_objects:
+                    self.session.flush()
+                    for key, obj in new_objects:
+                        SecurityRepository._security_id_cache[key] = obj.id
+                        mapping[key] = obj.id
 
         return mapping
 

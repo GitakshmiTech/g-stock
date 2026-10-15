@@ -91,27 +91,44 @@ def _bulk_upsert_mysql(session: Session, records: list[dict[str, Any]]) -> None:
 
 
 def _bulk_upsert_sqlite(session: Session, records: list[dict[str, Any]]) -> None:
-    """Executes SQLite ON CONFLICT DO UPDATE for development and testing."""
-    for record in records:
-        stmt = sqlite_insert(StockDailyHistory).values(**record)
-        update_dict = {
-            "prev_close": stmt.excluded.prev_close,
-            "open_price": stmt.excluded.open_price,
-            "high_price": stmt.excluded.high_price,
-            "low_price": stmt.excluded.low_price,
-            "last_price": stmt.excluded.last_price,
-            "close_price": stmt.excluded.close_price,
-            "vwap": stmt.excluded.vwap,
-            "traded_quantity": stmt.excluded.traded_quantity,
-            "turnover": stmt.excluded.turnover,
-            "no_of_trades": stmt.excluded.no_of_trades,
-            "deliverable_quantity": stmt.excluded.deliverable_quantity,
-            "deliverable_pct": stmt.excluded.deliverable_pct,
-            "source_format": stmt.excluded.source_format,
-            "source_file": stmt.excluded.source_file,
-        }
-        upsert_stmt = stmt.on_conflict_do_update(
-            index_elements=["trade_date", "security_id", "series"],
-            set_=update_dict,
+    """Executes SQLite ON CONFLICT DO UPDATE in batch for maximum throughput."""
+    if not records:
+        return
+    cols = [
+        "trade_date", "security_id", "symbol", "series",
+        "prev_close", "open_price", "high_price", "low_price", "last_price", "close_price", "vwap",
+        "traded_quantity", "turnover", "no_of_trades", "deliverable_quantity", "deliverable_pct",
+        "source_format", "source_file",
+    ]
+    batch_records = [{c: r.get(c, None) for c in cols} for r in records]
+    raw_query = text("""
+        INSERT INTO stock_daily_history (
+            trade_date, security_id, symbol, series,
+            prev_close, open_price, high_price, low_price, last_price, close_price, vwap,
+            traded_quantity, turnover, no_of_trades, deliverable_quantity, deliverable_pct,
+            source_format, source_file
+        ) VALUES (
+            :trade_date, :security_id, :symbol, :series,
+            :prev_close, :open_price, :high_price, :low_price, :last_price, :close_price, :vwap,
+            :traded_quantity, :turnover, :no_of_trades, :deliverable_quantity, :deliverable_pct,
+            :source_format, :source_file
         )
-        session.execute(upsert_stmt)
+        ON CONFLICT(trade_date, security_id, series) DO UPDATE SET
+            close_price = excluded.close_price,
+            open_price = excluded.open_price,
+            high_price = excluded.high_price,
+            low_price = excluded.low_price,
+            prev_close = excluded.prev_close,
+            last_price = excluded.last_price,
+            vwap = excluded.vwap,
+            traded_quantity = excluded.traded_quantity,
+            turnover = excluded.turnover,
+            no_of_trades = excluded.no_of_trades,
+            deliverable_quantity = excluded.deliverable_quantity,
+            deliverable_pct = excluded.deliverable_pct,
+            source_format = excluded.source_format,
+            source_file = excluded.source_file,
+            updated_at = CURRENT_TIMESTAMP
+    """)
+    session.execute(raw_query, batch_records)
+

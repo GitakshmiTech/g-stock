@@ -97,23 +97,35 @@ class BackfillService:
                     continue
 
                 # Ingest file
-                res = ingestion_service.ingest_download_result(dl_result, job_id=job_id)
-                if res.status == FileStatus.IMPORTED:
-                    summary.successful_dates_count += 1
-                    summary.total_rows_imported += res.inserted_count
-                else:
+                try:
+                    res = ingestion_service.ingest_download_result(dl_result, job_id=job_id)
+                    if res.status == FileStatus.IMPORTED:
+                        summary.successful_dates_count += 1
+                        summary.total_rows_imported += res.inserted_count
+                    else:
+                        summary.failed_dates_count += 1
+                except Exception as ex:
+                    logger.error(f"Unexpected error ingesting date {target_date}: {ex}")
+                    session.rollback()
+                    summary.missing_dates.append(target_date)
                     summary.failed_dates_count += 1
+                finally:
+                    session.expunge_all()
 
                 # Update progress periodically
                 if idx % batch_days == 0 or idx == len(dates_to_process):
-                    ingestion_repo.update_job_status(
-                        job_id=job_id,
-                        status=JobStatus.RUNNING,
-                        successful_dates=summary.successful_dates_count,
-                        failed_dates=summary.failed_dates_count,
-                        total_rows=summary.total_rows_imported,
-                    )
-                    session.commit()
+                    try:
+                        ingestion_repo.update_job_status(
+                            job_id=job_id,
+                            status=JobStatus.RUNNING,
+                            successful_dates=summary.successful_dates_count,
+                            failed_dates=summary.failed_dates_count,
+                            total_rows=summary.total_rows_imported,
+                        )
+                        session.commit()
+                    except Exception as e:
+                        logger.warning(f"Failed to update job status in DB: {e}")
+                        session.rollback()
 
             final_status = JobStatus.SUCCESS if summary.failed_dates_count == 0 else JobStatus.PARTIAL
             ingestion_repo.update_job_status(

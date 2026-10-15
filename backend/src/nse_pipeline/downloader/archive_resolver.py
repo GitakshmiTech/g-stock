@@ -46,7 +46,7 @@ class ArchiveResolver:
             )
             # Alternative domain mirror
             urls.append(
-                f"https://archives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date_compact}_F_0000.csv.zip"
+                f"https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{date_compact}_F_0000.csv.zip"
             )
         else:
             day = trade_date.strftime("%d")
@@ -59,7 +59,7 @@ class ArchiveResolver:
         # Fallback daily full bhavdata CSV
         day_month_year = trade_date.strftime("%d%m%Y")
         urls.append(
-            f"https://archives.nseindia.com/products/content/sec_bhavdata_full_{day_month_year}.csv"
+            f"https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{day_month_year}.csv"
         )
 
         return urls

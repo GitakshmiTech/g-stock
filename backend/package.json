@@ -1,0 +1,16 @@
+{
+  "name": "nse-pipeline-backend",
+  "version": "1.0.0",
+  "description": "NSE Market Data Pipeline & Analytics FastAPI Backend",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js --reload",
+    "start": "node server.js",
+    "serve": "node server.js",
+    "pull": "node -e \"const {spawnSync}=require('child_process'); spawnSync(process.platform==='win32'?'py':'python3', ['-m','nse_pipeline.cli.commands','mongo','pull'], {stdio:'inherit',shell:true,cwd:require('path').resolve(__dirname,'..')})\"",
+    "status": "node -e \"const {spawnSync}=require('child_process'); spawnSync(process.platform==='win32'?'py':'python3', ['-m','nse_pipeline.cli.commands','mongo','status'], {stdio:'inherit',shell:true,cwd:require('path').resolve(__dirname,'..')})\""
+  },
+  "keywords": ["fastapi", "nse", "market-data", "stock-market"],
+  "author": "NSE Pipeline Team",
+  "license": "ISC"
+}

@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -89,7 +89,14 @@ class Settings(BaseSettings):
 
     @property
     def sqlite_connection_url(self) -> str:
-        db_path = Path(self.sqlite_db_path).resolve()
+        db_path = Path(self.sqlite_db_path)
+        if not db_path.is_absolute():
+            if not db_path.exists() and (Path("..") / self.sqlite_db_path).exists():
+                db_path = (Path("..") / self.sqlite_db_path).resolve()
+            else:
+                db_path = db_path.resolve()
+        else:
+            db_path = db_path.resolve()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path}"
 

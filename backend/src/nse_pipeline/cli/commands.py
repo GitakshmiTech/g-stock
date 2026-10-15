@@ -20,8 +20,8 @@ cli_app = typer.Typer(
 )
 
 cli_app.add_typer(setup_database.app, name="setup-database")
-cli_app.add_typer(backfill.app, name="backfill")
-cli_app.add_typer(daily_update.app, name="daily-update")
+cli_app.command(name="backfill", help="Historical backfill for NSE market data")(backfill.main)
+cli_app.command(name="daily-update", help="Daily end-of-day ingestion")(daily_update.main)
 cli_app.add_typer(import_file.app, name="import-file")
 cli_app.add_typer(validate_data.app, name="validate-data")
 cli_app.add_typer(export_data.app, name="export-data")

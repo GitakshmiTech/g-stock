@@ -10,7 +10,7 @@ from typing import Any, Generator
 
 from pymongo import MongoClient, UpdateOne, ASCENDING, DESCENDING
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import PyMongoError, BulkWriteError
 
 from nse_pipeline.core.config import get_settings
 
@@ -120,7 +120,7 @@ def sanitize_doc(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def bulk_upsert_stock_history_mongo(records: list[dict[str, Any]], batch_size: int = 2000) -> int:
-    """Performs an idempotent bulk upsert into the MongoDB 'stock_daily_history' collection."""
+    """Performs high-speed bulk ingestion into MongoDB 'stock_daily_history'."""
     if not records:
         return 0
 
@@ -132,28 +132,40 @@ def bulk_upsert_stock_history_mongo(records: list[dict[str, Any]], batch_size: i
     collection = db.stock_daily_history
 
     total_upserted = 0
-    for i in range(0, len(records), batch_size):
-        chunk = records[i : i + batch_size]
-        ops = []
-        for r in chunk:
-            clean = sanitize_doc(r)
-            sym = clean.get("symbol")
-            ser = clean.get("series", "EQ")
-            t_date = clean.get("trade_date")
-            if not sym or not t_date:
-                continue
+    clean_docs = []
+    for r in records:
+        clean = sanitize_doc(r)
+        if clean.get("symbol") and clean.get("trade_date"):
+            clean_docs.append(clean)
 
-            ops.append(
-                UpdateOne(
-                    {"symbol": sym, "series": ser, "trade_date": t_date},
-                    {"$set": clean},
-                    upsert=True,
-                )
-            )
-
-        if ops:
-            res = collection.bulk_write(ops, ordered=False)
-            total_upserted += (res.upserted_count + res.modified_count + res.matched_count)
+    for i in range(0, len(clean_docs), batch_size):
+        chunk = clean_docs[i : i + batch_size]
+        try:
+            res = collection.insert_many(chunk, ordered=False)
+            total_upserted += len(res.inserted_ids)
+        except BulkWriteError as bwe:
+            # Handle duplicates when re-ingesting or updating existing bars
+            write_errors = bwe.details.get("writeErrors", [])
+            total_upserted += bwe.details.get("nInserted", 0)
+            dup_indices = {err["index"] for err in write_errors if err.get("code") == 11000}
+            if dup_indices:
+                ops = [
+                    UpdateOne(
+                        {
+                            "symbol": chunk[idx]["symbol"],
+                            "series": chunk[idx].get("series", "EQ"),
+                            "trade_date": chunk[idx]["trade_date"],
+                        },
+                        {"$set": chunk[idx]},
+                        upsert=True,
+                    )
+                    for idx in dup_indices
+                ]
+                if ops:
+                    res_upsert = collection.bulk_write(ops, ordered=False)
+                    total_upserted += (res_upsert.upserted_count + res_upsert.modified_count + res_upsert.matched_count)
+        except Exception as e:
+            logger.warning(f"Failed to write daily records to MongoDB: {e}")
 
     return total_upserted
 

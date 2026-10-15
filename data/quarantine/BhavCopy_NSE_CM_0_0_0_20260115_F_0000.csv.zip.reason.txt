@@ -1,1 +1,1 @@
-Parsing failed for BhavCopy_NSE_CM_0_0_0_20260115_F_0000.csv.zip: Provided path is not a valid zip archive: data/raw/2026/01/BhavCopy_NSE_CM_0_0_0_20260115_F_0000.csv.zip
+Parsing failed for BhavCopy_NSE_CM_0_0_0_20260115_F_0000.csv.zip: Provided path is not a valid zip archive: data\raw\2026\01\BhavCopy_NSE_CM_0_0_0_20260115_F_0000.csv.zip
